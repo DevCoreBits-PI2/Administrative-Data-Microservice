@@ -1,0 +1,46 @@
+generator client {
+  provider     = "prisma-client-js"
+  output       = "../generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model areas {
+  id_area          Int         @id @default(autoincrement())
+  name             String      @db.VarChar(100)
+  description      String
+  id_administrator Int
+  created_at       DateTime    @default(dbgenerated("CURRENT_DATE")) @db.Date
+  positions        positions[]
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+model contracts {
+  id_contract  Int      @id @default(autoincrement())
+  conditions   String
+  type         String   @db.VarChar(50)
+  status       String   @db.VarChar(20)
+  start_date   DateTime @db.Date
+  end_date     DateTime @db.Date
+  pdf_document String
+  id_employee  Int
+  id_manager   Int
+  created_at   DateTime @db.Date
+}
+
+model positions {
+  id_position        Int         @id @default(autoincrement())
+  name               String      @db.VarChar(100)
+  base_salary        Float?
+  description        String
+  id_administrator   Int
+  id_area            Int
+  parent_position_id Int?
+  created_at         DateTime    @default(dbgenerated("CURRENT_DATE")) @db.Date
+  areas              areas       @relation(fields: [id_area], references: [id_area], onDelete: Cascade, onUpdate: NoAction, map: "fk_area")
+  positions          positions?  @relation("positionsTopositions", fields: [parent_position_id], references: [id_position], onUpdate: NoAction, map: "fk_parent_position")
+  other_positions    positions[] @relation("positionsTopositions")
+}
