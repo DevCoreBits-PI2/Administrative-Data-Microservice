@@ -13,7 +13,7 @@ export class AdministrativeDataController {
     return this.administrativeDataService.create(createAdministrativeDatumDto);
   }
 
-  @MessagePattern('findAllAdministrativeData')
+  @MessagePattern({cmd:'findAllAdministrativeData'})
   findAll() {
     return this.administrativeDataService.findAll();
   }
