@@ -1,12 +1,11 @@
 generator client {
-  provider     = "prisma-client-js"
-  output       = "../generated/prisma"
-  moduleFormat = "cjs"
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
 }
 
 datasource db {
   provider = "postgresql"
-}
+} 
 
 model areas {
   id_area          Int         @id @default(autoincrement())
