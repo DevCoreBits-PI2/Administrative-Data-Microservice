@@ -17,7 +17,7 @@ export class AdministrativeDataService {
   //---- businness logic for areas -------
   async createArea(createAreaDto: CreateAreaDto){
     try {
-      await this.prisma.areas.create({
+      return await this.prisma.areas.create({
         data:{
           name: createAreaDto.name,
           description: createAreaDto.description,
