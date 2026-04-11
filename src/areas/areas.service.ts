@@ -1,21 +1,21 @@
 import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
-import { ClientProxy, RpcException } from '@nestjs/microservices';
+import { CreateAreaDto } from './dto/create-area.dto';
+import { UpdateAreaDto } from './dto/update-area.dto';
 import { NATS_SERVICE } from 'src/config';
-import { CreateAreaDto, CreatePositionDto } from './dto';
 import { PrismaService } from 'src/lib/prisma';
+import { ClientProxy, RpcException } from '@nestjs/microservices';
 
 @Injectable()
-export class AdministrativeDataService {
+export class AreasService {
 
-  private readonly logger = new Logger("administrative-data-service")
-
+  private readonly logger = new Logger('areas service')
+  
   constructor(
     @Inject(NATS_SERVICE) private readonly client: ClientProxy,
     private readonly prisma: PrismaService
   ){}
 
-  //---- businness logic for areas -------
-  async createArea(createAreaDto: CreateAreaDto){
+  async create(createAreaDto: CreateAreaDto) {
     try {
       return await this.prisma.areas.create({
         data:{
@@ -25,7 +25,7 @@ export class AdministrativeDataService {
           created_at: new Date()
         }
       })
-    } catch (error) {
+    } catch (error: any) {
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
         message: error.message
@@ -33,16 +33,19 @@ export class AdministrativeDataService {
     }
   }
 
-  //---- businness logic for positions -------
-  createPosition(createPositionDto: CreatePositionDto) {
-    return 'This action adds a new administrativeDatum';
-  }
-
   findAll() {
-    return `This action returns all administrativeData`;
+    return `This action returns all areas`;
   }
 
+  findOne(id: number) {
+    return `This action returns a #${id} area`;
+  }
 
+  update(id: number, updateAreaDto: UpdateAreaDto) {
+    return `This action updates a #${id} area`;
+  }
 
-  //---- businness logic for contracts -------
+  remove(id: number) {
+    return `This action removes a #${id} area`;
+  }
 }

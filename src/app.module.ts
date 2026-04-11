@@ -1,8 +1,10 @@
 import { Module } from '@nestjs/common';
-import { AdministrativeDataModule } from './administrative-data/administrative-data.module';
+import { AreasModule } from './areas/areas.module';
+import { PositionsModule } from './positions/positions.module';
+import { ContractsModule } from './contracts/contracts.module';
 
 @Module({
-  imports: [AdministrativeDataModule],
+  imports: [AreasModule, PositionsModule, ContractsModule],
   controllers: [],
   providers: [],
 })
