@@ -4,6 +4,7 @@ import { UpdateAreaDto } from './dto/update-area.dto';
 import { NATS_SERVICE } from 'src/config';
 import { PrismaService } from 'src/lib/prisma';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
+import { PaginationDto } from 'src/common';
 
 @Injectable()
 export class AreasService {
@@ -11,7 +12,7 @@ export class AreasService {
   private readonly logger = new Logger('areas service')
   
   constructor(
-    @Inject(NATS_SERVICE) private readonly client: ClientProxy,
+    // @Inject(NATS_SERVICE) private readonly client: ClientProxy,
     private readonly prisma: PrismaService
   ){}
 
@@ -25,27 +26,94 @@ export class AreasService {
           created_at: new Date()
         }
       })
-    } catch (error: any) {
+    } catch (error) {
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
-        message: error.message
+        message: error instanceof Error ? error.message : 'Error desconocido',
       })
     }
   }
 
-  findAll() {
-    return `This action returns all areas`;
+  async findAll(paginationDto: PaginationDto) {
+    try {
+      const total = await this.prisma.areas.count();
+      const currentPage = paginationDto.page;
+      const perPage = paginationDto.limit;
+
+      return {
+        data: await this.prisma.areas.findMany({
+          skip: (currentPage - 1) * perPage,
+          take: perPage,
+        }),
+        meta: {
+          total,
+          page: currentPage,
+          lastPage: Math.ceil(total / perPage),
+        },
+      };
+    } catch (error) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: error instanceof Error ? error.message : 'Error desconocido',
+      });
+    }
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} area`;
+  async findOne(id: number) {
+    try {
+      const area = await this.prisma.areas.findUnique({
+        where: { id_area: id },
+      });
+
+      if (!area) {
+        throw new RpcException({
+          status: HttpStatus.NOT_FOUND,
+          message: `Área con id ${id} no encontrada`,
+        });
+      }
+
+      return area;
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: error instanceof Error ? error.message : 'Error desconocido',
+      });
+    }
   }
 
-  update(id: number, updateAreaDto: UpdateAreaDto) {
-    return `This action updates a #${id} area`;
+  async update(id: number, updateAreaDto: UpdateAreaDto) {
+    try {
+      await this.findOne(id);
+
+      const { id: _, ...data } = updateAreaDto;
+
+      return await this.prisma.areas.update({
+        where: { id_area: id },
+        data,
+      });
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: error instanceof Error ? error.message : 'Error desconocido',
+      });
+    }
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} area`;
+  async remove(id: number) {
+    try {
+      await this.findOne(id);
+
+      return await this.prisma.areas.delete({
+        where: { id_area: id },
+      });
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: error instanceof Error ? error.message : 'Error desconocido',
+      });
+    }
   }
 }

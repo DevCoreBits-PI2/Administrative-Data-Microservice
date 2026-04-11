@@ -1,9 +1,21 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CreatePositionDto } from './dto/create-position.dto';
 import { UpdatePositionDto } from './dto/update-position.dto';
+import { NATS_SERVICE } from 'src/config';
+import { PrismaService } from 'src/lib/prisma';
+import { ClientProxy } from '@nestjs/microservices';
 
 @Injectable()
 export class PositionsService {
+
+  private readonly logger = new Logger('positions service')
+  
+  constructor(
+    @Inject(NATS_SERVICE) private readonly client: ClientProxy,
+    private readonly prisma: PrismaService
+  ){}
+
+
   create(createPositionDto: CreatePositionDto) {
     return 'This action adds a new position';
   }
