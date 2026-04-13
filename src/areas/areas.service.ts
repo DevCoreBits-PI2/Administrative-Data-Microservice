@@ -2,7 +2,7 @@ import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { CreateAreaDto } from './dto/create-area.dto';
 import { UpdateAreaDto } from './dto/update-area.dto';
 import { NATS_SERVICE } from 'src/config';
-import { PrismaService } from 'src/lib/prisma';
+import { PrismaService } from 'src/lib/prismaService/prisma';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { PaginationDto } from 'src/common';
 
@@ -17,7 +17,6 @@ export class AreasService {
   ){}
 
   async create(createAreaDto: CreateAreaDto) {
-    //############/
     try {
       return await this.prisma.areas.create({
         data:{
@@ -30,7 +29,7 @@ export class AreasService {
     } catch (error) {
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
-        message: error instanceof Error ? error.message : 'Error desconocido',
+        message: error instanceof Error ? error.message : 'Unknown error',
       })
     }
   }
@@ -55,7 +54,7 @@ export class AreasService {
     } catch (error) {
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
-        message: error instanceof Error ? error.message : 'Error desconocido',
+        message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   }
@@ -78,7 +77,7 @@ export class AreasService {
       if (error instanceof RpcException) throw error;
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
-        message: error instanceof Error ? error.message : 'Error desconocido',
+        message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   }
@@ -97,7 +96,7 @@ export class AreasService {
       if (error instanceof RpcException) throw error;
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
-        message: error instanceof Error ? error.message : 'Error desconocido',
+        message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   }
@@ -113,7 +112,7 @@ export class AreasService {
       if (error instanceof RpcException) throw error;
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
-        message: error instanceof Error ? error.message : 'Error desconocido',
+        message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   }

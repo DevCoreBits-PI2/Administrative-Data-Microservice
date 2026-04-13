@@ -1,10 +1,11 @@
-import {IsDate, IsEnum, IsNumber, IsOptional, IsPositive, IsString } from "class-validator";
+import { IsBase64, IsDate, IsEnum, IsMimeType, IsNumber, IsOptional, IsPositive, IsString } from "class-validator";
 import { StatusContractListDto } from "../enum/contract_status.enum";
 import { Type } from "class-transformer";
 import { contract_status_enum, contract_type_enum } from "@prisma/client";
 import { TypeContractListDto } from "../enum/contract_type.enum";
 
-export class CreateContractDto{
+export class CreateContractWithPdfDto {
+
   @IsString()
   conditions: string
 
@@ -28,9 +29,6 @@ export class CreateContractDto{
   @IsDate()
   endDate: Date
 
-  @IsString()
-  pdfDocument: string
-
   @Type(() => Number)
   @IsNumber()
   @IsPositive()
@@ -40,4 +38,21 @@ export class CreateContractDto{
   @IsNumber()
   @IsPositive()
   idManager: number
+
+  @IsBase64()
+  bufferBase64: string;
+
+  @IsMimeType()
+  mimetype: string;
+
+  @IsString()
+  originalname: string;
+
+  @IsOptional()
+  @IsString()
+  fieldname?: string;
+
+  @IsOptional()
+  @IsString()
+  encoding?: string;
 }
