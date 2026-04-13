@@ -2,7 +2,7 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { CreatePositionDto } from './dto/create-position.dto';
 import { UpdatePositionDto } from './dto/update-position.dto';
 import { NATS_SERVICE } from 'src/config';
-import { PrismaService } from 'src/lib/prisma';
+import { PrismaService } from 'src/lib/prismaService/prisma';
 import { ClientProxy } from '@nestjs/microservices';
 
 @Injectable()

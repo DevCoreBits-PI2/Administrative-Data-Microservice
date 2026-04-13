@@ -1,10 +1,10 @@
 generator client {
-  provider        = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 datasource db {
   provider = "postgresql"
-} 
+}
 
 model areas {
   id_area          Int         @id @default(autoincrement())
@@ -17,16 +17,16 @@ model areas {
 
 /// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
 model contracts {
-  id_contract  Int      @id @default(autoincrement())
-  conditions   String
-  type         String   @db.VarChar(50)
-  status       String   @db.VarChar(20)
-  start_date   DateTime @db.Date
-  end_date     DateTime @db.Date
-  pdf_document String
-  id_employee  Int
-  id_manager   Int
-  created_at   DateTime @db.Date
+  id_contract   Int                  @id @default(autoincrement())
+  conditions    String
+  contract_type contract_type_enum
+  status        contract_status_enum @default(valid)
+  start_date    DateTime             @db.Date
+  end_date      DateTime             @db.Date
+  pdf_document  String
+  id_employee   Int
+  id_manager    Int
+  created_at    DateTime             @db.Date
 }
 
 model positions {
@@ -41,4 +41,18 @@ model positions {
   areas              areas       @relation(fields: [id_area], references: [id_area], onDelete: Cascade, onUpdate: NoAction, map: "fk_area")
   positions          positions?  @relation("positionsTopositions", fields: [parent_position_id], references: [id_position], onUpdate: NoAction, map: "fk_parent_position")
   other_positions    positions[] @relation("positionsTopositions")
+}
+
+enum contract_status_enum {
+  valid
+  expired
+}
+
+enum contract_type_enum {
+  fixed_term_contract            @map("fixed-term-contract")
+  indefinite_term_contract       @map("indefinite-term-contract")
+  work_or_project_based_contract @map("work-or-project-based-contract")
+  temporary_contract             @map("temporary-contract")
+  apprenticeship_contract        @map("apprenticeship-contract")
+  service_provision_contract     @map("service-provision-contract")
 }
