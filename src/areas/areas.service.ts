@@ -17,6 +17,7 @@ export class AreasService {
   ){}
 
   async create(createAreaDto: CreateAreaDto) {
+    //############/
     try {
       return await this.prisma.areas.create({
         data:{
