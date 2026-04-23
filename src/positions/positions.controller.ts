@@ -1,34 +1,34 @@
 import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { PositionsService } from './positions.service';
-import { CreatePositionDto } from './dto/create-position.dto';
-import { UpdatePositionDto } from './dto/update-position.dto';
+import { PaginationDto } from 'src/common';
+import { CreatePositionDto, UpdatePositionDto } from './dto';
 
 @Controller()
 export class PositionsController {
   constructor(private readonly positionsService: PositionsService) {}
 
-  @MessagePattern('createPosition')
+  @MessagePattern({ cmd: 'createPosition' })
   create(@Payload() createPositionDto: CreatePositionDto) {
     return this.positionsService.create(createPositionDto);
   }
 
-  @MessagePattern('findAllPositions')
-  findAll() {
-    return this.positionsService.findAll();
+  @MessagePattern({ cmd: 'findAllPositions' })
+  findAll(@Payload() paginationDto: PaginationDto) {
+    return this.positionsService.findAll(paginationDto);
   }
 
-  @MessagePattern('findOnePosition')
+  @MessagePattern({ cmd: 'findOnePosition' })
   findOne(@Payload() id: number) {
     return this.positionsService.findOne(id);
   }
 
-  @MessagePattern('updatePosition')
+  @MessagePattern({ cmd: 'updatePosition' })
   update(@Payload() updatePositionDto: UpdatePositionDto) {
     return this.positionsService.update(updatePositionDto.id, updatePositionDto);
   }
 
-  @MessagePattern('removePosition')
+  @MessagePattern({ cmd: 'removePosition' })
   remove(@Payload() id: number) {
     return this.positionsService.remove(id);
   }

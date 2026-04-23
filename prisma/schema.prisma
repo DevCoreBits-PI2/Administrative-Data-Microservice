@@ -27,6 +27,7 @@ model contracts {
   id_employee   Int
   id_manager    Int
   created_at    DateTime             @db.Date
+  public_id     String?
 }
 
 model positions {

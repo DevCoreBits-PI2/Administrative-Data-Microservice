@@ -2,15 +2,14 @@ import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { ContractsService } from './contracts.service';
 import { CreateContractDto, CreateContractWithPdfDto, UpdateContractDto } from './dto';
+import { PaginationDto } from 'src/common';
 
 @Controller()
 export class ContractsController {
   constructor(private readonly contractsService: ContractsService) {}
 
-  @MessagePattern({cmd:'createContract'})
-  async createContract(
-    @Payload() payload: CreateContractWithPdfDto,
-  ) {
+  @MessagePattern({ cmd: 'createContract' })
+  async createContract(@Payload() payload: CreateContractWithPdfDto) {
     const buffer = Buffer.from(payload.bufferBase64, 'base64');
 
     const file = {
@@ -31,6 +30,7 @@ export class ContractsController {
       startDate: payload.startDate,
       endDate: payload.endDate,
       pdfDocument: uploadedPdf.secure_url,
+      publicId: uploadedPdf.public_id,
       idEmployee: payload.idEmployee,
       idManager: payload.idManager,
     };
@@ -38,22 +38,22 @@ export class ContractsController {
     return this.contractsService.create(contractData);
   }
 
-  @MessagePattern('findAllContracts')
-  findAll() {
-    return this.contractsService.findAll();
+  @MessagePattern({ cmd: 'findAllContracts' })
+  findAll(@Payload() paginationDto: PaginationDto) {
+    return this.contractsService.findAll(paginationDto);
   }
 
-  @MessagePattern('findOneContract')
+  @MessagePattern({ cmd: 'findOneContract' })
   findOne(@Payload() id: number) {
     return this.contractsService.findOne(id);
   }
 
-  @MessagePattern('updateContract')
+  @MessagePattern({ cmd: 'updateContract' })
   update(@Payload() updateContractDto: UpdateContractDto) {
     return this.contractsService.update(updateContractDto.id, updateContractDto);
   }
 
-  @MessagePattern('removeContract')
+  @MessagePattern({ cmd: 'removeContract' })
   remove(@Payload() id: number) {
     return this.contractsService.remove(id);
   }

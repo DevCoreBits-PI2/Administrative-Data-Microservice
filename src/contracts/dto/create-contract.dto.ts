@@ -40,4 +40,7 @@ export class CreateContractDto{
   @IsNumber()
   @IsPositive()
   idManager: number
+
+  @IsString()
+  publicId: string
 }
