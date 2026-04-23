@@ -105,9 +105,14 @@ export class AreasService {
     try {
       await this.findOne(id);
 
-      return await this.prisma.areas.delete({
+      await this.prisma.areas.delete({
         where: { id_area: id },
       });
+    
+      return {
+        message: "area deleted successfully"
+      }
+
     } catch (error) {
       if (error instanceof RpcException) throw error;
       throw new RpcException({

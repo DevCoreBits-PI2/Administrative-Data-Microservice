@@ -1,1 +1,2 @@
-export * from '../../areas/dto/create-area.dto'
+export * from '../dto/create-area.dto'
+export * from '../dto/update-area.dto'
