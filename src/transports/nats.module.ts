@@ -8,7 +8,8 @@ import { NATS_SERVICE, envs } from 'src/config';
       name: NATS_SERVICE,
       transport: Transport.NATS,
       options: {
-        servers: envs.natsServers
+        servers: envs.natsServers,
+        maxPayload: 20971520,
       }
     }])
   ],
@@ -17,7 +18,8 @@ import { NATS_SERVICE, envs } from 'src/config';
       name: NATS_SERVICE,
       transport: Transport.NATS,
       options: {
-        servers: envs.natsServers
+        servers: envs.natsServers,
+        maxPayload: 20971520,
       }
     }])
   ]
