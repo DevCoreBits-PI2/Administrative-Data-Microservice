@@ -32,4 +32,9 @@ export class PositionsController {
   remove(@Payload() id: number) {
     return this.positionsService.remove(id);
   }
+
+  @MessagePattern({ cmd: 'positionsTree' })
+  positionsTree(){
+    return this.positionsService.getPositionsTree();
+  }
 }

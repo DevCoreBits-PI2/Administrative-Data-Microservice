@@ -7,11 +7,12 @@ datasource db {
 }
 
 model areas {
-  id_area          Int         @id @default(autoincrement())
-  name             String      @db.VarChar(100)
+  id_area          Int              @id @default(autoincrement())
+  name             String           @unique @db.VarChar(100)
   description      String
   id_administrator Int
-  created_at       DateTime    @default(dbgenerated("CURRENT_DATE")) @db.Date
+  created_at       DateTime         @default(dbgenerated("CURRENT_DATE")) @db.Date
+  status           status_area_type @default(active)
   positions        positions[]
 }
 
@@ -31,17 +32,19 @@ model contracts {
 }
 
 model positions {
-  id_position        Int         @id @default(autoincrement())
-  name               String      @db.VarChar(100)
+  id_position        Int                  @id @default(autoincrement())
+  name               String               @db.VarChar(100)
   base_salary        Float?
   description        String
   id_administrator   Int
   id_area            Int
   parent_position_id Int?
-  created_at         DateTime    @default(dbgenerated("CURRENT_DATE")) @db.Date
-  areas              areas       @relation(fields: [id_area], references: [id_area], onDelete: Cascade, onUpdate: NoAction, map: "fk_area")
-  positions          positions?  @relation("positionsTopositions", fields: [parent_position_id], references: [id_position], onUpdate: NoAction, map: "fk_parent_position")
-  other_positions    positions[] @relation("positionsTopositions")
+  created_at         DateTime             @default(dbgenerated("CURRENT_DATE")) @db.Date
+  vacancies          Int
+  status             status_position_type @default(active)
+  areas              areas                @relation(fields: [id_area], references: [id_area], onDelete: Cascade, onUpdate: NoAction, map: "fk_area")
+  positions          positions?           @relation("positionsTopositions", fields: [parent_position_id], references: [id_position], onUpdate: NoAction, map: "fk_parent_position")
+  other_positions    positions[]          @relation("positionsTopositions")
 }
 
 enum contract_status_enum {
@@ -56,4 +59,14 @@ enum contract_type_enum {
   temporary_contract             @map("temporary-contract")
   apprenticeship_contract        @map("apprenticeship-contract")
   service_provision_contract     @map("service-provision-contract")
+}
+
+enum status_area_type {
+  active
+  inactive
+}
+
+enum status_position_type {
+  active
+  inactive
 }

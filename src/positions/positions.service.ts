@@ -1,15 +1,21 @@
-import { HttpStatus, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
 import { CreatePositionDto } from './dto/create-position.dto';
 import { UpdatePositionDto } from './dto/update-position.dto';
 import { PrismaService } from 'src/lib/prismaService/prisma';
-import { RpcException } from '@nestjs/microservices';
+import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { PaginationDto } from 'src/common';
+import { firstValueFrom } from 'rxjs';
+import { NATS_SERVICE } from 'src/config';
+import { status_position_type } from '@prisma/client';
 
 @Injectable()
 export class PositionsService {
   private readonly logger = new Logger('positions service');
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    @Inject(NATS_SERVICE) private readonly client: ClientProxy,
+    private readonly prisma: PrismaService
+  ) {}
 
   async create(createPositionDto: CreatePositionDto) {
     try {
@@ -18,6 +24,7 @@ export class PositionsService {
           name: createPositionDto.name,
           base_salary: createPositionDto.base_salary,
           description: createPositionDto.description,
+          vacancies: createPositionDto.vacancies,
           id_administrator: createPositionDto.id_administrator,
           id_area: createPositionDto.id_area,
           parent_position_id: createPositionDto.parent_position_id,
@@ -25,6 +32,7 @@ export class PositionsService {
         },
       });
     } catch (error) {
+      if (error instanceof RpcException) throw error;
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
         message: error instanceof Error ? error.message : 'Unknown error',
@@ -50,6 +58,7 @@ export class PositionsService {
         },
       };
     } catch (error) {
+      if (error instanceof RpcException) throw error;
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
         message: error instanceof Error ? error.message : 'Unknown error',
@@ -101,15 +110,61 @@ export class PositionsService {
 
   async remove(id: number) {
     try {
-      await this.findOne(id);
+      const position = await this.findOne(id);
 
-      await this.prisma.positions.delete({
-        where: { id_position: id },
-      });
+      await this.prisma.positions.update({
+        where: {id_position: position.id_position},
+        data: {
+          status: status_position_type.inactive
+        },
+      })
 
       return {
         message: "position deleted successfully",
       }
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  async getPositionsTree(){
+    try {
+      
+      const [positions, employees] = await Promise.all([
+        this.prisma.positions.findMany({
+          include: {
+            areas: { 
+              select: { 
+                name: true, 
+                description: true 
+              } 
+            },
+            other_positions: { 
+              select: { 
+                id_position: true 
+              } 
+            },
+          },
+        }),
+        firstValueFrom(this.client.send({ cmd: 'findAllEmployees' }, {})),
+      ]);
+
+      const employeeByPosition = new Map<number, { photo_url: string; first_name: string; last_name: string }>(
+        employees.map((e: { id_position: number; photo_url: string; first_name: string; last_name: string }) => [
+          e.id_position,
+          { photo_url: e.photo_url, first_name: e.first_name, last_name: e.last_name },
+          ]),
+        );
+
+      return positions.map((position) => ({
+        ...position,
+        employee: employeeByPosition.get(position.id_position) ?? null,
+        }));
+
     } catch (error) {
       if (error instanceof RpcException) throw error;
       throw new RpcException({

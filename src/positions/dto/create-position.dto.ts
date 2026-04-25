@@ -1,4 +1,6 @@
-import { IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
+import { IsEnum, IsNumber, IsOptional, IsPositive, IsString } from 'class-validator';
+import { TypePositionListDto } from '../enum/status_position.enum';
+import { status_position_type } from '@prisma/client';
 
 export class CreatePositionDto {
   @IsString()
@@ -24,4 +26,14 @@ export class CreatePositionDto {
   @IsPositive()
   @IsOptional()
   parent_position_id?: number;
+
+  @IsEnum(TypePositionListDto, {
+    message: `valid types are: ${TypePositionListDto}`
+  })
+  @IsOptional()
+  status?: status_position_type
+
+  @IsNumber()
+  @IsPositive()
+  vacancies: number;
 }
