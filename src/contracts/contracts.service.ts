@@ -3,8 +3,10 @@ import { v2 as cloudinary } from 'cloudinary';
 import { PrismaService } from 'src/lib/prismaService/prisma';
 import { RpcException } from '@nestjs/microservices';
 import { CloudinaryResponse } from 'src/lib/imageProvider/cloudinary-response';
-import { CreateContractDto, UpdateContractDto } from './dto';
+import { CreateContractDto, RenewContractDto, UpdateContractDto } from './dto';
 import { PaginationDto } from 'src/common';
+import { contract_status_enum } from '@prisma/client';
+import { NON_EDITABLE_STATUSES } from './enum/contract_status.enum';
 
 const streamifier = require('streamifier');
 
@@ -41,8 +43,35 @@ export class ContractsService {
     });
   }
 
+  private validateDateRange(startDate: Date, endDate: Date): void {
+    if (endDate <= startDate) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: 'End date must be after start date',
+      });
+    }
+  }
+
   async create(createContractDto: CreateContractDto) {
     try {
+      this.validateDateRange(createContractDto.startDate, createContractDto.endDate);
+
+      const overlapping = await this.prisma.contracts.findFirst({
+        where: {
+          id_employee: createContractDto.idEmployee,
+          status: contract_status_enum.valid,
+          start_date: { lt: createContractDto.endDate },
+          end_date: { gt: createContractDto.startDate },
+        },
+      });
+
+      if (overlapping) {
+        throw new RpcException({
+          status: HttpStatus.CONFLICT,
+          message: `Employee already has an active contract (id: ${overlapping.id_contract}) overlapping with the given dates`,
+        });
+      }
+
       return await this.prisma.contracts.create({
         data: {
           conditions: createContractDto.conditions,
@@ -58,6 +87,7 @@ export class ContractsService {
         },
       });
     } catch (error) {
+      if (error instanceof RpcException) throw error;
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
         message: error instanceof Error ? error.message : 'Unknown error',
@@ -115,21 +145,32 @@ export class ContractsService {
 
   async update(id: number, updateContractDto: UpdateContractDto) {
     try {
-      await this.findOne(id);
+      const contract = await this.findOne(id);
+
+      if (NON_EDITABLE_STATUSES.includes(contract.status as any)) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Contract with status '${contract.status}' cannot be modified`,
+        });
+      }
 
       const { id: _, pdfDocument, contractStatus, contractType, startDate, endDate, idEmployee, idManager, conditions } = updateContractDto;
+
+      const resolvedStart = startDate ?? contract.start_date;
+      const resolvedEnd   = endDate   ?? contract.end_date;
+      this.validateDateRange(resolvedStart, resolvedEnd);
 
       return await this.prisma.contracts.update({
         where: { id_contract: id },
         data: {
-          ...(conditions && { conditions }),
+          ...(conditions    && { conditions }),
           ...(contractStatus && { status: contractStatus }),
-          ...(contractType && { contract_type: contractType }),
-          ...(startDate && { start_date: startDate }),
-          ...(endDate && { end_date: endDate }),
-          ...(pdfDocument && { pdf_document: pdfDocument }),
-          ...(idEmployee && { id_employee: idEmployee }),
-          ...(idManager && { id_manager: idManager }),
+          ...(contractType  && { contract_type: contractType }),
+          ...(startDate     && { start_date: startDate }),
+          ...(endDate       && { end_date: endDate }),
+          ...(pdfDocument   && { pdf_document: pdfDocument }),
+          ...(idEmployee    && { id_employee: idEmployee }),
+          ...(idManager     && { id_manager: idManager }),
         },
       });
     } catch (error) {
@@ -145,22 +186,83 @@ export class ContractsService {
     try {
       const contract = await this.findOne(id);
 
-      cloudinary.uploader.destroy(contract.public_id)
-      .catch(error => {
+      if (contract.status === contract_status_enum.renewed) {
         throw new RpcException({
           status: HttpStatus.BAD_REQUEST,
-          message: `something went wrong deleting the file from cloudinary: ${error.message}` 
-        })
-      })
+          message: 'Contract cannot be deleted because it has been renewed and is part of the employment history',
+        });
+      }
+
+      if (contract.public_id) {
+        cloudinary.uploader.destroy(contract.public_id).catch(error => {
+          this.logger.error(`Failed to delete Cloudinary file: ${error.message}`);
+        });
+      }
 
       await this.prisma.contracts.delete({
         where: { id_contract: id },
       });
-    
-      return {
-        message: "contract deleted successfully"
+
+      return { message: 'Contract deleted successfully' };
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  async renewContract(renewContractDto: RenewContractDto) {
+    try {
+      const contract = await this.findOne(renewContractDto.id);
+
+      if (contract.status !== contract_status_enum.valid) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Only active contracts can be renewed. Current status: '${contract.status}'`,
+        });
       }
 
+      this.validateDateRange(contract.end_date, renewContractDto.newEndDate);
+
+      const [, newContract] = await this.prisma.$transaction([
+        this.prisma.contracts.update({
+          where: { id_contract: contract.id_contract },
+          data: { status: contract_status_enum.renewed },
+        }),
+        this.prisma.contracts.create({
+          data: {
+            conditions:    contract.conditions,
+            contract_type: contract.contract_type,
+            status:        contract_status_enum.valid,
+            start_date:    contract.end_date,
+            end_date:      renewContractDto.newEndDate,
+            pdf_document:  contract.pdf_document,
+            public_id:     contract.public_id,
+            id_employee:   contract.id_employee,
+            id_manager:    contract.id_manager,
+            created_at:    new Date(),
+          },
+        }),
+      ]);
+
+      return newContract;
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  async findByEmployee(idEmployee: number) {
+    try {
+      return await this.prisma.contracts.findMany({
+        where: { id_employee: idEmployee },
+        orderBy: { start_date: 'asc' },
+      });
     } catch (error) {
       if (error instanceof RpcException) throw error;
       throw new RpcException({

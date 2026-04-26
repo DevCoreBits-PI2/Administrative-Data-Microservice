@@ -33,7 +33,7 @@ model contracts {
 
 model positions {
   id_position        Int                  @id @default(autoincrement())
-  name               String               @db.VarChar(100)
+  name               String
   base_salary        Float?
   description        String
   id_administrator   Int
@@ -50,6 +50,8 @@ model positions {
 enum contract_status_enum {
   valid
   expired
+  renewed
+  annulled
 }
 
 enum contract_type_enum {
