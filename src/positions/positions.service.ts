@@ -6,7 +6,8 @@ import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { PaginationDto } from 'src/common';
 import { firstValueFrom } from 'rxjs';
 import { NATS_SERVICE } from 'src/config';
-import { status_position_type } from '@prisma/client';
+import { status_area_type, status_position_type } from '@prisma/client';
+import { AreasService } from 'src/areas/areas.service';
 
 @Injectable()
 export class PositionsService {
@@ -14,11 +15,76 @@ export class PositionsService {
 
   constructor(
     @Inject(NATS_SERVICE) private readonly client: ClientProxy,
+    private readonly areaService: AreasService,
     private readonly prisma: PrismaService
   ) {}
 
+  private async validateParentHierarchy(positionId: number | null, parentId: number): Promise<void> {
+    if (positionId === parentId) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: 'A position cannot be its own parent',
+      });
+    }
+
+    const parent = await this.prisma.positions.findUnique({
+      where: { id_position: parentId },
+    });
+
+    if (!parent) {
+      throw new RpcException({
+        status: HttpStatus.NOT_FOUND,
+        message: `Parent position with id ${parentId} not found`,
+      });
+    }
+
+    if (parent.status === status_position_type.inactive) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: 'Parent position must be active',
+      });
+    }
+
+    if (positionId === null) return;
+
+    // Detectar jerarquía circular: recorrer hacia arriba desde el padre propuesto
+    let currentId: number | null = parent.parent_position_id;
+    const visited = new Set<number>();
+
+    while (currentId !== null) {
+      if (currentId === positionId) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: 'The hierarchy relationship creates a circular reference',
+        });
+      }
+      if (visited.has(currentId)) break;
+      visited.add(currentId);
+
+      const ancestor = await this.prisma.positions.findUnique({
+        where: { id_position: currentId },
+        select: { parent_position_id: true },
+      });
+
+      if (!ancestor) break;
+      currentId = ancestor.parent_position_id;
+    }
+  }
+
   async create(createPositionDto: CreatePositionDto) {
     try {
+      const area = await this.areaService.findOne(createPositionDto.id_area);
+      if (area.status == status_area_type.inactive){
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `The area ${area.name} is inactive`
+        })
+      }
+
+      if (createPositionDto.parent_position_id !== undefined) {
+        await this.validateParentHierarchy(null, createPositionDto.parent_position_id);
+      }
+
       return await this.prisma.positions.create({
         data: {
           name: createPositionDto.name,
@@ -75,7 +141,7 @@ export class PositionsService {
       if (!position) {
         throw new RpcException({
           status: HttpStatus.NOT_FOUND,
-          message: `Posición con id ${id} no encontrada`,
+          message: `Position with id ${id} not found`,
         });
       }
 
@@ -93,12 +159,52 @@ export class PositionsService {
     try {
       await this.findOne(id);
 
+      if (updatePositionDto.parent_position_id !== undefined) {
+        await this.validateParentHierarchy(id, updatePositionDto.parent_position_id);
+      }
+
       const { id: _, ...data } = updatePositionDto;
 
       return await this.prisma.positions.update({
         where: { id_position: id },
         data,
       });
+    } catch (error) {
+      if (error instanceof RpcException) throw error;
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
+  // Desvincula el cargo de su padre
+  async removeHierarchy(id: number) {
+    try {
+      const position = await this.findOne(id);
+
+      if (position.parent_position_id === null) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: `Position with id ${id} has no parent assigned`,
+        });
+      }
+
+      const hasSubordinates = await this.prisma.positions.count({
+        where: { parent_position_id: id },
+      });
+
+      const updated = await this.prisma.positions.update({
+        where: { id_position: id },
+        data: { parent_position_id: null },
+      });
+
+      return {
+        ...updated,
+        warning: hasSubordinates > 0
+          ? `Position unlinked from hierarchy but has ${hasSubordinates} subordinate position(s) that depend on it`
+          : undefined,
+      };
     } catch (error) {
       if (error instanceof RpcException) throw error;
       throw new RpcException({

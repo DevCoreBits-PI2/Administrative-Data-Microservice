@@ -9,6 +9,7 @@ import { PrismaService } from 'src/lib/prismaService/prisma';
   providers: [AreasService, PrismaService],
   imports: [
     NatsModule
-  ]
+  ],
+  exports: [AreasService]
 })
 export class AreasModule {}

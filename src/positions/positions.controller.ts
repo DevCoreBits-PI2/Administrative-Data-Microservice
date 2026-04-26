@@ -37,4 +37,9 @@ export class PositionsController {
   positionsTree(){
     return this.positionsService.getPositionsTree();
   }
+
+  @MessagePattern({ cmd: 'removePositionHierarchy' })
+  removeHierarchy(@Payload() id: number) {
+    return this.positionsService.removeHierarchy(id);
+  }
 }
