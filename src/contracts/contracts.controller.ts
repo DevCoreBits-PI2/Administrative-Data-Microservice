@@ -1,7 +1,7 @@
 import { Controller } from '@nestjs/common';
 import { MessagePattern, Payload } from '@nestjs/microservices';
 import { ContractsService } from './contracts.service';
-import { CreateContractDto, CreateContractWithPdfDto, UpdateContractDto } from './dto';
+import { CreateContractDto, CreateContractWithPdfDto, RenewContractDto, UpdateContractDto } from './dto';
 import { PaginationDto } from 'src/common';
 
 @Controller()
@@ -56,5 +56,15 @@ export class ContractsController {
   @MessagePattern({ cmd: 'removeContract' })
   remove(@Payload() id: number) {
     return this.contractsService.remove(id);
+  }
+
+  @MessagePattern({ cmd: 'renewContract' })
+  renew(@Payload() renewContractDto: RenewContractDto) {
+    return this.contractsService.renewContract(renewContractDto);
+  }
+
+  @MessagePattern({ cmd: 'findContractsByEmployee' })
+  findByEmployee(@Payload() idEmployee: number) {
+    return this.contractsService.findByEmployee(idEmployee);
   }
 }
