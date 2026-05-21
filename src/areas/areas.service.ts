@@ -3,7 +3,7 @@ import { AreaPaginationDto, CreateAreaDto, UpdateAreaDto } from './dto';
 import { NATS_SERVICE } from '@/src/config';
 import { PrismaService } from '@/src/lib/prismaService/prisma';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
-import { Prisma, status_area_type } from '@prisma/client';
+import { Prisma, status_area_type, status_position_type } from '@prisma/client';
 
 @Injectable()
 export class AreasService {
@@ -169,7 +169,7 @@ export class AreasService {
       const area = await this.findOne(id);
 
       const positions = await this.prisma.positions.count({
-        where: { id_area: area.id_area },
+        where: { id_area: area.id_area, status: status_position_type.active },
       });
 
       if (positions > 0) {
