@@ -5,7 +5,6 @@ import { NATS_SERVICE } from '@/src/config';
 import { PrismaService } from '@/src/lib/prismaService/prisma';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { PaginationDto } from '@/src/common';
-import { Prisma, status_area_type } from '@prisma/client';
 
 @Injectable()
 export class AreasService {
@@ -17,38 +16,57 @@ export class AreasService {
     private readonly prisma: PrismaService
   ){}
 
+  private normalizeName(name: string): string {
+    return name.trim();
+  }
+
+  private validateName(name: string): void {
+    const normalizedName = this.normalizeName(name);
+    if (normalizedName.length < 3 || normalizedName.length > 100) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: 'Name must be between 3 and 100 characters',
+      });
+    }
+  }
+
   async create(createAreaDto: CreateAreaDto) {
     try {
+      // Validate name before creating
+      this.validateName(createAreaDto.name);
+
+      const normalizedName = this.normalizeName(createAreaDto.name);
+
       return await this.prisma.areas.create({
         data:{
-          name: createAreaDto.name,
+          name: normalizedName,
           description: createAreaDto.description,
           id_administrator: createAreaDto.id_administrator,
           created_at: new Date()
         }
       })
     } catch (error) {
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2002'
-      ) {
-        throw new RpcException({
-          status: HttpStatus.CONFLICT,
-          message: 'Area with that name already exists',
-        });
-      }
-      if (
-        error instanceof Prisma.PrismaClientKnownRequestError &&
-        error.code === 'P2004'
-      ){
-        throw new RpcException({
-          status: HttpStatus.CONFLICT,
-          message: error.message
-        })
+      // Re-throw RpcException if it's already one (validation errors)
+      if (error instanceof RpcException) throw error;
+
+      // Check for Prisma errors by code property
+      if (error && typeof error === 'object' && 'code' in error) {
+        if ((error as any).code === 'P2002') {
+          throw new RpcException({
+            status: HttpStatus.CONFLICT,
+            message: 'Area with that name already exists',
+          });
+        }
+        if ((error as any).code === 'P2004') {
+          throw new RpcException({
+            status: HttpStatus.CONFLICT,
+            message: (error as any).message
+          })
+        }
       }
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
-        message: error,
+        message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   }
@@ -128,7 +146,7 @@ export class AreasService {
       await this.prisma.areas.update({
         where: { id_area: id },
         data: {
-          status: status_area_type.inactive
+          status: 'inactive' as any
         }
       });
     

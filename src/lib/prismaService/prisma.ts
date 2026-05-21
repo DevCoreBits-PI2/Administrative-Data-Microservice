@@ -8,6 +8,8 @@ const adapter = new PrismaPg({ connectionString });
 
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
+  [key: string]: any; // Allow any model access for flexibility
+
   constructor() {
     super({ adapter });
   }
