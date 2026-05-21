@@ -376,25 +376,26 @@ export class PositionsService {
 
   async getPositionsTree(){
     try {
-      
-      const [positions, employees] = await Promise.all([
-        this.prisma.positions.findMany({
-          include: {
-            areas: { 
-              select: { 
-                name: true, 
-                description: true 
-              } 
-            },
-            other_positions: { 
-              select: { 
-                id_position: true 
-              } 
-            },
+      const positions = await this.prisma.positions.findMany({
+        include: {
+          areas: { 
+            select: { 
+              name: true, 
+              description: true 
+            } 
           },
-        }),
-        firstValueFrom(this.client.send({ cmd: 'findAllUsers' }, {})),
-      ]);
+          other_positions: { 
+            select: { 
+              id_position: true 
+            } 
+          },
+        },
+      });
+
+      const positionIds = positions.map((position) => position.id_position);
+      const employees = positionIds.length > 0
+        ? await firstValueFrom(this.client.send({ cmd: 'findEmployeesByPositionIds' }, { positionIds }))
+        : [];
 
       const employeeByPosition = new Map<number, { photo_url: string; first_name: string; last_name: string }>(
         employees.map((e: { id_position: number; photo_url: string; first_name: string; last_name: string }) => [
