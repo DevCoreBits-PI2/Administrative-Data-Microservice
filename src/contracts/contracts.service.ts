@@ -3,9 +3,8 @@ import { v2 as cloudinary } from 'cloudinary';
 import { PrismaService } from '@/src/lib/prismaService/prisma';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { CloudinaryResponse } from '@/src/lib/imageProvider/cloudinary-response';
-import { CreateContractDto, RenewContractDto, UpdateContractDto } from './dto';
-import { PaginationDto } from '@/src/common';
-import { contract_status_enum } from '@prisma/client';
+import { ContractPaginationDto, CreateContractDto, RenewContractDto, UpdateContractDto } from './dto';
+import { contract_status_enum, contract_type_enum } from '@prisma/client';
 import { NON_EDITABLE_STATUSES } from './enum/contract_status.enum';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { NATS_SERVICE } from '@/src/config';
@@ -51,7 +50,9 @@ export class ContractsService {
     });
   }
 
-  private validateDateRange(startDate: Date, endDate: Date): void {
+  private validateDateRange(startDate: Date, endDate?: Date | null): void {
+    if (!endDate) return;
+
     if (endDate <= startDate) {
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
@@ -60,33 +61,59 @@ export class ContractsService {
     }
   }
 
+  private validateEndDateForContractType(contractType: contract_type_enum, endDate?: Date | null): void {
+    if (contractType === contract_type_enum.indefinite_term_contract || endDate) return;
+
+    throw new RpcException({
+      status: HttpStatus.BAD_REQUEST,
+      message: 'End date is required unless contract type is indefinite_term_contract',
+    });
+  }
+
+  private async validateNoActiveOverlap(
+    idEmployee: number,
+    startDate: Date,
+    endDate?: Date | null,
+    excludeContractId?: number,
+  ): Promise<void> {
+    const overlapping = await this.prisma.contracts.findFirst({
+      where: {
+        id_employee: idEmployee,
+        status: contract_status_enum.valid,
+        ...(endDate && { start_date: { lt: endDate } }),
+        OR: [
+          { end_date: null },
+          { end_date: { gt: startDate } },
+        ],
+        ...(excludeContractId && { id_contract: { not: excludeContractId } }),
+      },
+    });
+
+    if (overlapping) {
+      throw new RpcException({
+        status: HttpStatus.CONFLICT,
+        message: `Employee already has an active contract (id: ${overlapping.id_contract}) overlapping with the given dates`,
+      });
+    }
+  }
+
   async create(createContractDto: CreateContractDto) {
     try {
+      this.validateEndDateForContractType(createContractDto.contractType, createContractDto.endDate);
       this.validateDateRange(createContractDto.startDate, createContractDto.endDate);
+      await this.validateNoActiveOverlap(
+        createContractDto.idEmployee,
+        createContractDto.startDate,
+        createContractDto.endDate,
+      );
 
-      const overlapping = await this.prisma.contracts.findFirst({
-        where: {
-          id_employee: createContractDto.idEmployee,
-          status: contract_status_enum.valid,
-          start_date: { lt: createContractDto.endDate },
-          end_date: { gt: createContractDto.startDate },
-        },
-      });
-
-      if (overlapping) {
-        throw new RpcException({
-          status: HttpStatus.CONFLICT,
-          message: `Employee already has an active contract (id: ${overlapping.id_contract}) overlapping with the given dates`,
-        });
-      }
-
-      return await this.prisma.contracts.create({
+      const contract = await this.prisma.contracts.create({
         data: {
           conditions: createContractDto.conditions,
-          status: createContractDto.contractStatus,
+          ...(createContractDto.contractStatus && { status: createContractDto.contractStatus }),
           contract_type: createContractDto.contractType,
           start_date: createContractDto.startDate,
-          end_date: createContractDto.endDate,
+          end_date: createContractDto.endDate ?? null,
           id_employee: createContractDto.idEmployee,
           id_manager: createContractDto.idManager,
           pdf_document: createContractDto.pdfDocument,
@@ -94,6 +121,14 @@ export class ContractsService {
           created_at: new Date(),
         },
       });
+
+      await this.createCareerHistory({
+        id_employee: contract.id_employee,
+        type: 'contract_modification',
+        description: `Contrato ${contract.id_contract} creado con tipo ${contract.contract_type}`,
+      });
+
+      return contract;
     } catch (error) {
       if (error instanceof RpcException) throw error;
       throw new RpcException({
@@ -103,14 +138,27 @@ export class ContractsService {
     }
   }
 
-  async findAll(paginationDto: PaginationDto) {
+  async findAll(paginationDto: ContractPaginationDto) {
     try {
-      const total = await this.prisma.contracts.count();
+      const where: any = {
+        ...(paginationDto.status && { status: paginationDto.status }),
+        ...(paginationDto.contract_type && { contract_type: paginationDto.contract_type }),
+        ...(paginationDto.id_employee && { id_employee: paginationDto.id_employee }),
+        ...(paginationDto.id_manager && { id_manager: paginationDto.id_manager }),
+        ...(paginationDto.startDate && { start_date: { gte: paginationDto.startDate } }),
+        ...(paginationDto.endDate && { end_date: { lte: paginationDto.endDate } }),
+        ...(paginationDto.search && {
+          conditions: { contains: paginationDto.search },
+        }),
+      };
+
+      const total = await this.prisma.contracts.count({ where });
       const currentPage = paginationDto.page;
       const perPage = paginationDto.limit;
 
       return {
         data: await this.prisma.contracts.findMany({
+          where,
           skip: (currentPage - 1) * perPage,
           take: perPage,
         }),
@@ -151,6 +199,43 @@ export class ContractsService {
     }
   }
 
+  async getStats() {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const in30Days = new Date(today);
+      in30Days.setDate(in30Days.getDate() + 30);
+
+      const [active, expiringSoon, renewed, expired, annulled] = await Promise.all([
+        this.prisma.contracts.count({ where: { status: contract_status_enum.valid } }),
+        this.prisma.contracts.count({
+          where: {
+            status: contract_status_enum.valid,
+            end_date: { gte: today, lte: in30Days },
+          },
+        }),
+        this.prisma.contracts.count({ where: { status: contract_status_enum.renewed } }),
+        this.prisma.contracts.count({ where: { status: contract_status_enum.expired } }),
+        this.prisma.contracts.count({ where: { status: contract_status_enum.annulled } }),
+      ]);
+
+      return {
+        active,
+        expiringSoon,
+        renewed,
+        expired,
+        annulled,
+        expiredOrAnnulled: expired + annulled,
+      };
+    } catch (error) {
+      throw new RpcException({
+        status: HttpStatus.BAD_REQUEST,
+        message: error instanceof Error ? error.message : 'Unknown error',
+      });
+    }
+  }
+
   async update(id: number, updateContractDto: UpdateContractDto) {
     try {
       const contract = await this.findOne(id);
@@ -165,22 +250,36 @@ export class ContractsService {
       const { id: _, pdfDocument, contractStatus, contractType, startDate, endDate, idEmployee, idManager, conditions } = updateContractDto;
 
       const resolvedStart = startDate ?? contract.start_date;
-      const resolvedEnd   = endDate   ?? contract.end_date;
+      const resolvedEnd = endDate !== undefined ? endDate : contract.end_date;
+      const resolvedEmployee = idEmployee ?? contract.id_employee;
+      const resolvedType = contractType ?? contract.contract_type;
+      this.validateEndDateForContractType(resolvedType, resolvedEnd);
       this.validateDateRange(resolvedStart, resolvedEnd);
+      await this.validateNoActiveOverlap(resolvedEmployee, resolvedStart, resolvedEnd, id);
 
-      return await this.prisma.contracts.update({
+      const updated = await this.prisma.contracts.update({
         where: { id_contract: id },
         data: {
           ...(conditions    && { conditions }),
           ...(contractStatus && { status: contractStatus }),
           ...(contractType  && { contract_type: contractType }),
           ...(startDate     && { start_date: startDate }),
-          ...(endDate       && { end_date: endDate }),
+          ...(endDate !== undefined && { end_date: endDate }),
           ...(pdfDocument   && { pdf_document: pdfDocument }),
           ...(idEmployee    && { id_employee: idEmployee }),
           ...(idManager     && { id_manager: idManager }),
         },
       });
+
+      if (this.hasContractChanges(contract, updated)) {
+        await this.createCareerHistory({
+          id_employee: updated.id_employee,
+          type: 'contract_modification',
+          description: `Contrato ${updated.id_contract} actualizado`,
+        });
+      }
+
+      return updated;
     } catch (error) {
       if (error instanceof RpcException) throw error;
       throw new RpcException({
@@ -232,6 +331,13 @@ export class ContractsService {
         });
       }
 
+      if (!contract.end_date) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: 'Indefinite-term contracts cannot be renewed because they do not have an end date',
+        });
+      }
+
       this.validateDateRange(contract.end_date, renewContractDto.newEndDate);
 
       const [, newContract] = await this.prisma.$transaction([
@@ -255,6 +361,12 @@ export class ContractsService {
         }),
       ]);
 
+      await this.createCareerHistory({
+        id_employee: newContract.id_employee,
+        type: 'contract_modification',
+        description: `Contrato ${contract.id_contract} renovado hasta ${newContract.end_date.toISOString().slice(0, 10)}`,
+      });
+
       return newContract;
     } catch (error) {
       if (error instanceof RpcException) throw error;
@@ -265,12 +377,36 @@ export class ContractsService {
     }
   }
 
-  async findByEmployee(idEmployee: number) {
+  async findByEmployee(idEmployee: number, paginationDto: ContractPaginationDto) {
     try {
-      return await this.prisma.contracts.findMany({
-        where: { id_employee: idEmployee },
-        orderBy: { start_date: 'asc' },
-      });
+      const where: any = {
+        id_employee: idEmployee,
+        ...(paginationDto.status && { status: paginationDto.status }),
+        ...(paginationDto.contract_type && { contract_type: paginationDto.contract_type }),
+        ...(paginationDto.id_manager && { id_manager: paginationDto.id_manager }),
+        ...(paginationDto.startDate && { start_date: { gte: paginationDto.startDate } }),
+        ...(paginationDto.endDate && { end_date: { lte: paginationDto.endDate } }),
+        ...(paginationDto.search && {
+          conditions: { contains: paginationDto.search },
+        }),
+      };
+      const currentPage = paginationDto.page ?? 1;
+      const perPage = paginationDto.limit ?? 10;
+      const total = await this.prisma.contracts.count({ where });
+
+      return {
+        data: await this.prisma.contracts.findMany({
+          where,
+          skip: (currentPage - 1) * perPage,
+          take: perPage,
+          orderBy: { start_date: 'asc' },
+        }),
+        meta: {
+          total,
+          page: currentPage,
+          lastPage: Math.ceil(total / perPage),
+        },
+      };
     } catch (error) {
       if (error instanceof RpcException) throw error;
       throw new RpcException({
@@ -278,6 +414,33 @@ export class ContractsService {
         message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
+  }
+
+  private hasContractChanges(previous: any, updated: any): boolean {
+    return previous.conditions !== updated.conditions
+      || previous.contract_type !== updated.contract_type
+      || previous.status !== updated.status
+      || previous.pdf_document !== updated.pdf_document
+      || previous.id_employee !== updated.id_employee
+      || previous.id_manager !== updated.id_manager
+      || previous.start_date.getTime() !== updated.start_date.getTime()
+      || previous.end_date?.getTime() !== updated.end_date?.getTime();
+  }
+
+  private async createCareerHistory(payload: {
+    id_employee: number;
+    type: 'promotion' | 'transfer' | 'contract_modification' | 'salary_change' | 'evaluation';
+    description: string;
+  }) {
+    await firstValueFrom(
+      this.client.send(
+        { cmd: 'createCareerHistory' },
+        {
+          ...payload,
+          event_date: new Date(),
+        },
+      ),
+    );
   }
 
 

@@ -1,10 +1,9 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
-import { CreateAreaDto } from './dto/create-area.dto';
-import { UpdateAreaDto } from './dto/update-area.dto';
+import { AreaPaginationDto, CreateAreaDto, UpdateAreaDto } from './dto';
 import { NATS_SERVICE } from '@/src/config';
 import { PrismaService } from '@/src/lib/prismaService/prisma';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
-import { PaginationDto } from '@/src/common';
+import { Prisma, status_area_type, status_position_type } from '@prisma/client';
 
 @Injectable()
 export class AreasService {
@@ -16,52 +15,47 @@ export class AreasService {
   ) {}
 
   private normalizeName(name: string): string {
-    return name.trim();
-  }
-
-  private validateName(name: string): void {
-    const normalizedName = this.normalizeName(name);
-    if (normalizedName.length < 3 || normalizedName.length > 100) {
+    const normalized = name.trim();
+    if (normalized.length < 3 || normalized.length > 100) {
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
-        message: 'Name must be between 3 and 100 characters',
+        message: 'Area name must be between 3 and 100 characters',
       });
     }
+    return normalized;
   }
 
   async create(createAreaDto: CreateAreaDto) {
     try {
-      // Validate name before creating
-      this.validateName(createAreaDto.name);
-
-      const normalizedName = this.normalizeName(createAreaDto.name);
+      const name = this.normalizeName(createAreaDto.name);
 
       return await this.prisma.areas.create({
         data: {
-          name: normalizedName,
-          description: createAreaDto.description,
+          name,
+          description: createAreaDto.description.trim(),
           id_administrator: createAreaDto.id_administrator,
           created_at: new Date(),
         },
       });
     } catch (error) {
-      // Re-throw RpcException if it's already one (validation errors)
       if (error instanceof RpcException) throw error;
-
-      // Check for Prisma errors by code property
-      if (error && typeof error === 'object' && 'code' in error) {
-        if (error.code === 'P2002') {
-          throw new RpcException({
-            status: HttpStatus.CONFLICT,
-            message: 'Area with that name already exists',
-          });
-        }
-        if (error.code === 'P2004') {
-          throw new RpcException({
-            status: HttpStatus.CONFLICT,
-            message: error.message,
-          });
-        }
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new RpcException({
+          status: HttpStatus.CONFLICT,
+          message: 'Area with that name already exists',
+        });
+      }
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2004'
+      ) {
+        throw new RpcException({
+          status: HttpStatus.CONFLICT,
+          message: error.message,
+        });
       }
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
@@ -70,14 +64,17 @@ export class AreasService {
     }
   }
 
-  async findAll(paginationDto: PaginationDto) {
+  async findAll(paginationDto: AreaPaginationDto) {
     try {
-      const where: any = {};
-
-      // Add status filter if provided
-      if ((paginationDto as any).status) {
-        where.status = (paginationDto as any).status;
-      }
+      const where: any = {
+        ...(paginationDto.status && { status: paginationDto.status }),
+        ...(paginationDto.search && {
+          OR: [
+            { name: { contains: paginationDto.search } },
+            { description: { contains: paginationDto.search } },
+          ],
+        }),
+      };
 
       const total = await this.prisma.areas.count({ where });
       const currentPage = paginationDto.page;
@@ -88,6 +85,11 @@ export class AreasService {
           where,
           skip: (currentPage - 1) * perPage,
           take: perPage,
+          include: {
+            _count: {
+              select: { positions: true },
+            },
+          },
         }),
         meta: {
           total,
@@ -107,6 +109,11 @@ export class AreasService {
     try {
       const area = await this.prisma.areas.findUnique({
         where: { id_area: id },
+        include: {
+          _count: {
+            select: { positions: true },
+          },
+        },
       });
 
       if (!area) {
@@ -131,33 +138,29 @@ export class AreasService {
       await this.findOne(id);
 
       const { id: _, ...data } = updateAreaDto;
-
-      // Validate and normalize name if it's being updated
-      if (data.name) {
-        this.validateName(data.name);
-        data.name = this.normalizeName(data.name);
-      }
+      if (data.name !== undefined) data.name = this.normalizeName(data.name);
+      if (data.description !== undefined) data.description = data.description.trim();
 
       return await this.prisma.areas.update({
         where: { id_area: id },
         data,
       });
     } catch (error) {
-      // Re-throw RpcException if it's already one (validation errors)
+      if (
+        error instanceof Prisma.PrismaClientKnownRequestError &&
+        error.code === 'P2002'
+      ) {
+        throw new RpcException({
+          status: HttpStatus.CONFLICT,
+          message: 'Area with that name already exists',
+        });
+      }
       if (error instanceof RpcException) throw error;
-
-      // Check for Prisma errors by code property
       if (error && typeof error === 'object' && 'code' in error) {
-        if (error.code === 'P2002') {
+        if ((error as any).code === 'P2004') {
           throw new RpcException({
             status: HttpStatus.CONFLICT,
-            message: 'Area with that name already exists',
-          });
-        }
-        if (error.code === 'P2004') {
-          throw new RpcException({
-            status: HttpStatus.CONFLICT,
-            message: error.message,
+            message: (error as any).message,
           });
         }
       }
@@ -172,15 +175,14 @@ export class AreasService {
     try {
       const area = await this.findOne(id);
 
-      // Check if area has associated positions (cargos)
-      const positionCount = await this.prisma.positions.count({
-        where: { id_area: id },
+      const positions = await this.prisma.positions.count({
+        where: { id_area: area.id_area, status: status_position_type.active },
       });
 
-      if (positionCount > 0) {
+      if (positions > 0) {
         throw new RpcException({
           status: HttpStatus.BAD_REQUEST,
-          message: 'Cannot delete area with associated positions',
+          message: 'Area cannot be removed because it has associated positions',
         });
       }
 

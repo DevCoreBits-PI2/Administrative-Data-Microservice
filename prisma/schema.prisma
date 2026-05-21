@@ -23,7 +23,7 @@ model contracts {
   contract_type            contract_type_enum
   status                   contract_status_enum @default(valid)
   start_date               DateTime             @db.Date
-  end_date                 DateTime             @db.Date
+  end_date                 DateTime?            @db.Date
   pdf_document             String
   id_employee              Int
   id_manager               Int

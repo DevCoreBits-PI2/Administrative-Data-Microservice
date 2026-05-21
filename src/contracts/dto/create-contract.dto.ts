@@ -25,8 +25,9 @@ export class CreateContractDto{
   startDate: Date 
 
   @Type(() => Date)
+  @IsOptional()
   @IsDate()
-  endDate: Date
+  endDate?: Date | null
 
   @IsString()
   pdfDocument: string
