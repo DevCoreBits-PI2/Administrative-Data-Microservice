@@ -4,7 +4,7 @@ import { PrismaService } from '@/src/lib/prismaService/prisma';
 import { ClientProxy, RpcException } from '@nestjs/microservices';
 import { CloudinaryResponse } from '@/src/lib/imageProvider/cloudinary-response';
 import { ContractPaginationDto, CreateContractDto, RenewContractDto, UpdateContractDto } from './dto';
-import { contract_status_enum } from '@prisma/client';
+import { contract_status_enum, contract_type_enum } from '@prisma/client';
 import { NON_EDITABLE_STATUSES } from './enum/contract_status.enum';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { NATS_SERVICE } from '@/src/config';
@@ -50,7 +50,9 @@ export class ContractsService {
     });
   }
 
-  private validateDateRange(startDate: Date, endDate: Date): void {
+  private validateDateRange(startDate: Date, endDate?: Date | null): void {
+    if (!endDate) return;
+
     if (endDate <= startDate) {
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
@@ -59,18 +61,30 @@ export class ContractsService {
     }
   }
 
+  private validateEndDateForContractType(contractType: contract_type_enum, endDate?: Date | null): void {
+    if (contractType === contract_type_enum.indefinite_term_contract || endDate) return;
+
+    throw new RpcException({
+      status: HttpStatus.BAD_REQUEST,
+      message: 'End date is required unless contract type is indefinite_term_contract',
+    });
+  }
+
   private async validateNoActiveOverlap(
     idEmployee: number,
     startDate: Date,
-    endDate: Date,
+    endDate?: Date | null,
     excludeContractId?: number,
   ): Promise<void> {
     const overlapping = await this.prisma.contracts.findFirst({
       where: {
         id_employee: idEmployee,
         status: contract_status_enum.valid,
-        start_date: { lt: endDate },
-        end_date: { gt: startDate },
+        ...(endDate && { start_date: { lt: endDate } }),
+        OR: [
+          { end_date: null },
+          { end_date: { gt: startDate } },
+        ],
         ...(excludeContractId && { id_contract: { not: excludeContractId } }),
       },
     });
@@ -85,6 +99,7 @@ export class ContractsService {
 
   async create(createContractDto: CreateContractDto) {
     try {
+      this.validateEndDateForContractType(createContractDto.contractType, createContractDto.endDate);
       this.validateDateRange(createContractDto.startDate, createContractDto.endDate);
       await this.validateNoActiveOverlap(
         createContractDto.idEmployee,
@@ -98,7 +113,7 @@ export class ContractsService {
           ...(createContractDto.contractStatus && { status: createContractDto.contractStatus }),
           contract_type: createContractDto.contractType,
           start_date: createContractDto.startDate,
-          end_date: createContractDto.endDate,
+          end_date: createContractDto.endDate ?? null,
           id_employee: createContractDto.idEmployee,
           id_manager: createContractDto.idManager,
           pdf_document: createContractDto.pdfDocument,
@@ -235,8 +250,10 @@ export class ContractsService {
       const { id: _, pdfDocument, contractStatus, contractType, startDate, endDate, idEmployee, idManager, conditions } = updateContractDto;
 
       const resolvedStart = startDate ?? contract.start_date;
-      const resolvedEnd   = endDate   ?? contract.end_date;
+      const resolvedEnd = endDate !== undefined ? endDate : contract.end_date;
       const resolvedEmployee = idEmployee ?? contract.id_employee;
+      const resolvedType = contractType ?? contract.contract_type;
+      this.validateEndDateForContractType(resolvedType, resolvedEnd);
       this.validateDateRange(resolvedStart, resolvedEnd);
       await this.validateNoActiveOverlap(resolvedEmployee, resolvedStart, resolvedEnd, id);
 
@@ -247,7 +264,7 @@ export class ContractsService {
           ...(contractStatus && { status: contractStatus }),
           ...(contractType  && { contract_type: contractType }),
           ...(startDate     && { start_date: startDate }),
-          ...(endDate       && { end_date: endDate }),
+          ...(endDate !== undefined && { end_date: endDate }),
           ...(pdfDocument   && { pdf_document: pdfDocument }),
           ...(idEmployee    && { id_employee: idEmployee }),
           ...(idManager     && { id_manager: idManager }),
@@ -311,6 +328,13 @@ export class ContractsService {
         throw new RpcException({
           status: HttpStatus.BAD_REQUEST,
           message: `Only active contracts can be renewed. Current status: '${contract.status}'`,
+        });
+      }
+
+      if (!contract.end_date) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: 'Indefinite-term contracts cannot be renewed because they do not have an end date',
         });
       }
 
@@ -400,7 +424,7 @@ export class ContractsService {
       || previous.id_employee !== updated.id_employee
       || previous.id_manager !== updated.id_manager
       || previous.start_date.getTime() !== updated.start_date.getTime()
-      || previous.end_date.getTime() !== updated.end_date.getTime();
+      || previous.end_date?.getTime() !== updated.end_date?.getTime();
   }
 
   private async createCareerHistory(payload: {
