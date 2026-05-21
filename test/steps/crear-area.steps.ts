@@ -35,8 +35,6 @@ type AreaResult = {
   [key: string]: unknown;
 };
 
-// Helper tipado para construir el error P2002 de Prisma
-// Evita los errores de ESLint no-unsafe-assignment / no-unsafe-call
 function makePrismaP2002(): Error & { code?: string; meta?: object } {
   const error = new Error(
     'Unique constraint failed on the fields: (`name`)',
@@ -67,9 +65,6 @@ defineFeature(feature, (test) => {
     thrownError = undefined;
   });
 
-  // =========================================================================
-  // CA2: Creacion exitosa con nombre y descripcion validos
-  // =========================================================================
   test('Creacion exitosa de area con datos validos', ({
     given,
     when,
@@ -119,9 +114,6 @@ defineFeature(feature, (test) => {
     });
   });
 
-  // =========================================================================
-  // CA3: Nombre duplicado -> Prisma P2002 -> RpcException CONFLICT (409)
-  // =========================================================================
   test('Rechazo por nombre de area duplicado', ({ given, when, then, and }) => {
     given(/^que ya existe un area registrada con el nombre "(.*)"$/, () => {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
@@ -162,9 +154,6 @@ defineFeature(feature, (test) => {
     });
   });
 
-  // =========================================================================
-  // CA5: Nombre < 3 caracteres -> normalizeName lanza BAD_REQUEST
-  // =========================================================================
   test('Rechazo por nombre demasiado corto', ({ given, when, then }) => {
     given(
       /^que el administrador ingresa el nombre "(.*)" con menos de 3 caracteres$/,
@@ -200,9 +189,6 @@ defineFeature(feature, (test) => {
     );
   });
 
-  // =========================================================================
-  // CA5: Nombre > 100 caracteres -> normalizeName lanza BAD_REQUEST
-  // =========================================================================
   test('Rechazo por nombre demasiado largo', ({ given, when, then }) => {
     given(
       'que el administrador ingresa un nombre con mas de 100 caracteres',
@@ -238,9 +224,6 @@ defineFeature(feature, (test) => {
     );
   });
 
-  // =========================================================================
-  // CA6: Trim aplicado -> nombre guardado sin espacios
-  // =========================================================================
   test('Creacion exitosa con espacios removidos del nombre', ({
     given,
     when,
@@ -281,9 +264,6 @@ defineFeature(feature, (test) => {
     );
   });
 
-  // =========================================================================
-  // CA8: Nombre vacio -> trim da '' (longitud 0 < 3) -> BAD_REQUEST
-  // =========================================================================
   test('Rechazo por nombre vacio', ({ given, when, then }) => {
     given('que el administrador deja el campo nombre vacio', () => {
       createDto = {
@@ -316,9 +296,6 @@ defineFeature(feature, (test) => {
     );
   });
 
-  // =========================================================================
-  // CA4: Error tecnico en BD -> RpcException con mensaje descriptivo
-  // =========================================================================
   test('Error tecnico durante el registro del area', ({
     given,
     and,

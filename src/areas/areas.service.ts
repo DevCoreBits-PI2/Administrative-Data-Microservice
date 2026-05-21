@@ -8,13 +8,12 @@ import { PaginationDto } from '@/src/common';
 
 @Injectable()
 export class AreasService {
+  private readonly logger = new Logger('areas service');
 
-  private readonly logger = new Logger('areas service')
-  
   constructor(
     // @Inject(NATS_SERVICE) private readonly client: ClientProxy,
-    private readonly prisma: PrismaService
-  ){}
+    private readonly prisma: PrismaService,
+  ) {}
 
   private normalizeName(name: string): string {
     return name.trim();
@@ -38,30 +37,30 @@ export class AreasService {
       const normalizedName = this.normalizeName(createAreaDto.name);
 
       return await this.prisma.areas.create({
-        data:{
+        data: {
           name: normalizedName,
           description: createAreaDto.description,
           id_administrator: createAreaDto.id_administrator,
-          created_at: new Date()
-        }
-      })
+          created_at: new Date(),
+        },
+      });
     } catch (error) {
       // Re-throw RpcException if it's already one (validation errors)
       if (error instanceof RpcException) throw error;
 
       // Check for Prisma errors by code property
       if (error && typeof error === 'object' && 'code' in error) {
-        if ((error as any).code === 'P2002') {
+        if (error.code === 'P2002') {
           throw new RpcException({
             status: HttpStatus.CONFLICT,
             message: 'Area with that name already exists',
           });
         }
-        if ((error as any).code === 'P2004') {
+        if (error.code === 'P2004') {
           throw new RpcException({
             status: HttpStatus.CONFLICT,
-            message: (error as any).message
-          })
+            message: error.message,
+          });
         }
       }
       throw new RpcException({
@@ -71,15 +70,22 @@ export class AreasService {
     }
   }
 
-
   async findAll(paginationDto: PaginationDto) {
     try {
-      const total = await this.prisma.areas.count();
+      const where: any = {};
+
+      // Add status filter if provided
+      if ((paginationDto as any).status) {
+        where.status = (paginationDto as any).status;
+      }
+
+      const total = await this.prisma.areas.count({ where });
       const currentPage = paginationDto.page;
       const perPage = paginationDto.limit;
 
       return {
         data: await this.prisma.areas.findMany({
+          where,
           skip: (currentPage - 1) * perPage,
           take: perPage,
         }),
@@ -126,12 +132,35 @@ export class AreasService {
 
       const { id: _, ...data } = updateAreaDto;
 
+      // Validate and normalize name if it's being updated
+      if (data.name) {
+        this.validateName(data.name);
+        data.name = this.normalizeName(data.name);
+      }
+
       return await this.prisma.areas.update({
         where: { id_area: id },
         data,
       });
     } catch (error) {
+      // Re-throw RpcException if it's already one (validation errors)
       if (error instanceof RpcException) throw error;
+
+      // Check for Prisma errors by code property
+      if (error && typeof error === 'object' && 'code' in error) {
+        if (error.code === 'P2002') {
+          throw new RpcException({
+            status: HttpStatus.CONFLICT,
+            message: 'Area with that name already exists',
+          });
+        }
+        if (error.code === 'P2004') {
+          throw new RpcException({
+            status: HttpStatus.CONFLICT,
+            message: error.message,
+          });
+        }
+      }
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
         message: error instanceof Error ? error.message : 'Unknown error',
@@ -143,17 +172,28 @@ export class AreasService {
     try {
       const area = await this.findOne(id);
 
+      // Check if area has associated positions (cargos)
+      const positionCount = await this.prisma.positions.count({
+        where: { id_area: id },
+      });
+
+      if (positionCount > 0) {
+        throw new RpcException({
+          status: HttpStatus.BAD_REQUEST,
+          message: 'Cannot delete area with associated positions',
+        });
+      }
+
       await this.prisma.areas.update({
         where: { id_area: id },
         data: {
-          status: 'inactive' as any
-        }
+          status: 'inactive' as any,
+        },
       });
-    
-      return {
-        message: "area deleted successfully"
-      }
 
+      return {
+        message: 'area deleted successfully',
+      };
     } catch (error) {
       if (error instanceof RpcException) throw error;
       throw new RpcException({
