@@ -26,8 +26,9 @@ export class CreateContractWithPdfDto {
   startDate: Date 
 
   @Type(() => Date)
+  @IsOptional()
   @IsDate()
-  endDate: Date
+  endDate?: Date | null
 
   @Type(() => Number)
   @IsNumber()
