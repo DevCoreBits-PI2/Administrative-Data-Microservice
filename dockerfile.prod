@@ -1,0 +1,68 @@
+# Dependencias
+FROM node:22-alpine AS deps
+
+WORKDIR /usr/src/app
+
+COPY package*.json ./
+COPY package-lock*.json ./
+
+RUN npm ci
+
+
+# Builder: construir la app
+FROM node:22-alpine AS build
+
+ARG DATABASE_URL=postgresql://user:password@localhost:5432/database
+ENV DATABASE_URL=${DATABASE_URL}
+
+WORKDIR /usr/src/app
+
+## Copiar de deps, los módulos de node
+COPY --from=deps /usr/src/app/node_modules ./node_modules
+
+## Copiar todo el código fuente
+COPY . .
+
+RUN npx prisma generate
+
+## Crear dist
+RUN npm run build
+
+## Dependencias de runtime
+FROM node:22-alpine AS prod-deps
+
+WORKDIR /usr/src/app
+
+COPY package*.json ./
+COPY package-lock*.json ./
+COPY prisma ./prisma
+
+RUN npm ci --omit=dev \
+    && rm -rf \
+      node_modules/prisma \
+      node_modules/@prisma/dev \
+      node_modules/@prisma/engines \
+      node_modules/@prisma/fetch-engine \
+      node_modules/@prisma/studio-core \
+      node_modules/@prisma/streams-local \
+      node_modules/@electric-sql \
+      node_modules/typescript \
+    && npm cache clean --force
+
+# Crear la imagen final
+FROM node:22-alpine AS prod
+
+WORKDIR /usr/src/app
+
+COPY --from=prod-deps /usr/src/app/node_modules ./node_modules
+COPY --from=build /usr/src/app/node_modules/.prisma ./node_modules/.prisma
+
+COPY --from=build /usr/src/app/dist ./dist
+
+ENV NODE_ENV=production
+
+USER node
+
+EXPOSE 3000
+
+CMD ["node", "dist/src/main.js"]
