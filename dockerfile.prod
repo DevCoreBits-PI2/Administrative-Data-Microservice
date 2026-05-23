@@ -12,8 +12,8 @@ RUN npm ci
 # Builder: construir la app
 FROM node:22-alpine AS build
 
-ARG DATABASE_URL=postgresql://user:password@localhost:5432/database
-ENV DATABASE_URL=${DATABASE_URL}
+ARG AD_DATABASE_URL
+ENV DATABASE_URL=$AD_DATABASE_URL
 
 WORKDIR /usr/src/app
 
