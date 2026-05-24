@@ -1,20 +1,20 @@
 steps:
-  - name: "gcr.io/cloud-builders/docker"
-    args:
-      [
-        "build",
-        "-t",
-        "us-central1-docker.pkg.dev/talent-core-497108/talent-core-repository/administrative-data-ms",
-        "-f",
-        "dockerfile.prod",
-        "--platform=linux/amd64",
-        ".",
-      ]
-  - name: "gcr.io/cloud-builders/docker"
-    args:
-      [
-        "push",
-        "us-central1-docker.pkg.dev/talent-core-497108/talent-core-repository/administrative-data-ms",
-      ]
-options:
-  logging: CLOUD_LOGGING_ONLY
+- name: 'gcr.io/cloud-builders/docker'
+  entrypoint: 'bash'
+  args:
+    - -c
+    - |
+      docker build -t us-central1-docker.pkg.dev/talent-core-497108/talent-core-repository/administrative-data-ms -f dockerfile.prod --platform=linux/amd64 --build-arg DIRECT_URL_ADMINISTRATIVE_DATA_DB=$$DATABASE_URL .
+  secretEnv: ['DATABASE_URL']
+
+- name: 'gcr.io/cloud-builders/docker'
+  args:
+    [
+      'push',
+      'us-central1-docker.pkg.dev/talent-core-497108/talent-core-repository/administrative-data-ms',
+    ]
+
+availableSecrets:
+  secretManager:
+  - versionName: projects/905332316414/secrets/direct_url_administrative_data_ms/versions/1
+    env: 'DATABASE_URL'
