@@ -18,3 +18,6 @@ availableSecrets:
   secretManager:
   - versionName: projects/905332316414/secrets/direct_url_administrative_data_ms/versions/1
     env: 'DATABASE_URL'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
