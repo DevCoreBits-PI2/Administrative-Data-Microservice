@@ -18,7 +18,8 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./test/jest-e2e.json"
+    "test:e2e": "jest --config ./test/jest-e2e.json",
+    "test:bdd": "jest --config ./test/jest-bdd.json"
   },
   "dependencies": {
     "@nestjs/common": "^11.0.1",
@@ -56,6 +57,7 @@
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^16.0.0",
     "jest": "^30.0.0",
+    "jest-cucumber": "^4.5.0",
     "prettier": "^3.4.2",
     "prisma": "^7.6.0",
     "source-map-support": "^0.5.21",

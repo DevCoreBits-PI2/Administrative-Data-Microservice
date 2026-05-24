@@ -9,8 +9,14 @@
     "target": "ES2021",
     "sourceMap": true,
     "outDir": "./dist",
+    "types": [
+      "jest",
+      "node"
+    ],
     "paths": {
-      "@/*": ["./*"]
+      "@/*": [
+        "./*"
+      ]
     },
     "incremental": true,
     "skipLibCheck": true,
@@ -21,6 +27,6 @@
     "noFallthroughCasesInSwitch": false
   },
   "watchOptions": {
-      "watchFile": "fixedPollingInterval"
+    "watchFile": "fixedPollingInterval"
   }
 }

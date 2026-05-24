@@ -7,13 +7,12 @@ import { Prisma, status_area_type, status_position_type } from '@prisma/client';
 
 @Injectable()
 export class AreasService {
+  private readonly logger = new Logger('areas service');
 
-  private readonly logger = new Logger('areas service')
-  
   constructor(
     // @Inject(NATS_SERVICE) private readonly client: ClientProxy,
-    private readonly prisma: PrismaService
-  ){}
+    private readonly prisma: PrismaService,
+  ) {}
 
   private normalizeName(name: string): string {
     const normalized = name.trim();
@@ -31,14 +30,15 @@ export class AreasService {
       const name = this.normalizeName(createAreaDto.name);
 
       return await this.prisma.areas.create({
-        data:{
+        data: {
           name,
           description: createAreaDto.description.trim(),
           id_administrator: createAreaDto.id_administrator,
-          created_at: new Date()
-        }
-      })
+          created_at: new Date(),
+        },
+      });
     } catch (error) {
+      if (error instanceof RpcException) throw error;
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2002'
@@ -51,19 +51,18 @@ export class AreasService {
       if (
         error instanceof Prisma.PrismaClientKnownRequestError &&
         error.code === 'P2004'
-      ){
+      ) {
         throw new RpcException({
           status: HttpStatus.CONFLICT,
-          message: error.message
-        })
+          message: error.message,
+        });
       }
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
-        message: error,
+        message: error instanceof Error ? error.message : 'Unknown error',
       });
     }
   }
-
 
   async findAll(paginationDto: AreaPaginationDto) {
     try {
@@ -157,6 +156,14 @@ export class AreasService {
         });
       }
       if (error instanceof RpcException) throw error;
+      if (error && typeof error === 'object' && 'code' in error) {
+        if ((error as any).code === 'P2004') {
+          throw new RpcException({
+            status: HttpStatus.CONFLICT,
+            message: (error as any).message,
+          });
+        }
+      }
       throw new RpcException({
         status: HttpStatus.BAD_REQUEST,
         message: error instanceof Error ? error.message : 'Unknown error',
@@ -182,14 +189,13 @@ export class AreasService {
       await this.prisma.areas.update({
         where: { id_area: id },
         data: {
-          status: status_area_type.inactive
-        }
+          status: 'inactive' as any,
+        },
       });
-    
-      return {
-        message: "area deleted successfully"
-      }
 
+      return {
+        message: 'area deleted successfully',
+      };
     } catch (error) {
       if (error instanceof RpcException) throw error;
       throw new RpcException({
